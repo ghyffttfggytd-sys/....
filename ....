@@ -1,77 +1,156 @@
--- main.lua (ใช้ได้กับ Love2D: https://love2d.org/)
-local targets = {}
-local menuOpen = false
-local fov = 60 -- องศา
-local showRedTeam = true
-local showGreenTeam = true
+localocal Players = game:GetService("Players")
+local UserInputService = game:GetService("UserInputService")
+local RunService = game:GetService("RunService")
+local StarterGui = game:GetService("StarterGui")
+local LocalPlayer = Players.LocalPlayer
+local Camera = workspace.CurrentCamera
 
-function love.load()
-    love.window.setTitle("Aim Trainer - ฝึกทักษะอย่างถูกต้อง!")
-    for i = 1, 10 do
-        table.insert(targets, {
-            x = math.random(50, love.graphics.getWidth() - 50),
-            y = math.random(50, love.graphics.getHeight() - 50),
-            isDoor = math.random() > 0.5,
-            team = math.random() > 0.5 and "red" or "green"
-        })
-    end
-end
+-- ตั้งค่าเริ่มต้น
+local SETTINGS = {
+    Enabled = true,
+    FOV = 60, -- องศา
+    ShowEnemies = true,
+    ShowTeammates = true
+}
 
-function love.update(dt)
-    if love.keyboard.isDown("m") then
-        menuOpen = not menuOpen
-        love.timer.sleep(0.2) -- ป้องกัน toggle เร็วเกิน
-    end
-end
+-- สร้าง UI สำหรับมือถือ
+local ScreenGui = Instance.new("ScreenGui")
+ScreenGui.ResetOnSpawn = false
+ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 
-function love.draw()
-    love.graphics.setColor(1, 1, 1)
-    love.graphics.print("กด M เพื่อเปิดเมนู", 10, 10)
+-- ปุ่มเปิด/ปิดเมนู
+local MenuButton = Instance.new("TextButton")
+MenuButton.Size = UDim2.new(0, 60, 0, 60)
+MenuButton.Position = UDim2.new(1, -70, 1, -70)
+MenuButton.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+MenuButton.Text = "⚙️"
+MenuButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+MenuButton.TextSize = 24
+MenuButton.Parent = ScreenGui
 
-    -- วาดเป้าหมาย
-    for _, t in ipairs(targets) do
-        if t.isDoor then
-            if t.team == "red" and showRedTeam then
-                love.graphics.setColor(1, 0, 0)
-            elseif t.team == "green" and showGreenTeam then
-                love.graphics.setColor(0, 1, 0)
-            else
-                love.graphics.setColor(0.5, 0.5, 0.5)
-            end
-            love.graphics.circle("fill", t.x, t.y, 20)
-            
-            -- คำนวณระยะห่างจากเมาส์
-            local mx, my = love.mouse.getPosition()
-            local dx, dy = mx - t.x, my - t.y
-            local dist = math.sqrt(dx*dx + dy*dy)
-            local angle = math.deg(math.atan2(dy, dx))
-            
-            -- วาด FOV indicator (ถ้าอยู่ในระยะ)
-            if dist < 200 then
-                love.graphics.setColor(1, 1, 0, 0.5)
-                love.graphics.arc("line", "open", t.x, t.y, 180, 
-                    math.rad(angle - fov/2), math.rad(angle + fov/2))
+-- เมนู (ซ่อนอยู่ก่อน)
+local MenuFrame = Instance.new("Frame")
+MenuFrame.Size = UDim2.new(0, 250, 0, 200)
+MenuFrame.Position = UDim2.new(0.5, -125, 0.5, -100)
+MenuFrame.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
+MenuFrame.Visible = false
+MenuFrame.Parent = ScreenGui
+
+-- ข้อความในเมนู
+local Title = Instance.new("TextLabel")
+Title.Size = UDim2.new(1, 0, 0, 30)
+Title.BackgroundTransparency = 1
+Title.Text = "ตั้งค่า Aimbot"
+Title.TextColor3 = Color3.fromRGB(255, 255, 255)
+Title.TextSize = 18
+Title.Font = Enum.Font.SourceSansBold
+Title.Parent = MenuFrame
+
+local FOVLabel = Instance.new("TextLabel")
+FOVLabel.Size = UDim2.new(1, 0, 0, 30)
+FOVLabel.Position = UDim2.new(0, 0, 0, 40)
+FOVLabel.BackgroundTransparency = 1
+FOVLabel.Text = "FOV: " .. SETTINGS.FOV
+FOVLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+FOVLabel.TextSize = 16
+FOVLabel.Parent = MenuFrame
+
+-- ปุ่ม + และ -
+local BtnMinus = Instance.new("TextButton")
+BtnMinus.Size = UDim2.new(0, 30, 0, 30)
+BtnMinus.Position = UDim2.new(0, 160, 0, 40)
+BtnMinus.Text = "-"
+BtnMinus.TextSize = 20
+BtnMinus.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
+BtnMinus.Parent = MenuFrame
+
+local BtnPlus = Instance.new("TextButton")
+BtnPlus.Size = UDim2.new(0, 30, 0, 30)
+BtnPlus.Position = UDim2.new(0, 195, 0, 40)
+BtnPlus.Text = "+"
+BtnPlus.TextSize = 20
+BtnPlus.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
+BtnPlus.Parent = MenuFrame
+
+-- ปุ่มเปิด/ปิดทีม
+local TeamToggle = Instance.new("TextButton")
+TeamToggle.Size = UDim2.new(1, -20, 0, 30)
+TeamToggle.Position = UDim2.new(0, 10, 0, 80)
+TeamToggle.Text = "แสดงศัตรู: เปิด"
+TeamToggle.BackgroundColor3 = Color3.fromRGB(80, 20, 20)
+TeamToggle.Parent = MenuFrame
+
+-- เปิด/ปิดเมนู
+MenuButton.MouseButton1Click:Connect(function()
+    MenuFrame.Visible = not MenuFrame.Visible
+end)
+
+-- ปรับ FOV
+BtnMinus.MouseButton1Click:Connect(function()
+    SETTINGS.FOV = math.max(10, SETTINGS.FOV - 5)
+    FOVLabel.Text = "FOV: " .. SETTINGS.FOV
+end)
+
+BtnPlus.MouseButton1Click:Connect(function()
+    SETTINGS.FOV = math.min(120, SETTINGS.FOV + 5)
+    FOVLabel.Text = "FOV: " .. SETTINGS.FOV
+end)
+
+-- ปิด/เปิดศัตรู
+TeamToggle.MouseButton1Click:Connect(function()
+    SETTINGS.ShowEnemies = not SETTINGS.ShowEnemies
+    TeamToggle.Text = "แสดงศัตรู: " .. (SETTINGS.ShowEnemies and "เปิด" or "ปิด")
+    TeamToggle.BackgroundColor3 = SETTINGS.ShowEnemies and Color3.fromRGB(20, 80, 20) or Color3.fromRGB(80, 20, 20)
+end)
+
+ScreenGui.Parent = LocalPlayer:WaitForChild("PlayerGui")
+
+--=== ระบบ Aimbot & ESP ===--
+RunService.RenderStepped:Connect(function()
+    if not SETTINGS.Enabled then return end
+
+    local mousePos = Vector2.new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y / 2)
+    local bestTarget = nil
+    local bestAngle = math.huge
+
+    -- สแกนวัตถุทั้งหมดในเวิลด์
+    for _, obj in ipairs(workspace:GetDescendants()) do
+        -- ล็อคเฉพาะ "DoorTarget"
+        if obj:IsA("BasePart") and obj.Name == "DoorTarget" then
+            local worldPos = obj.Position
+            local screenPos, onScreen = Camera:WorldToViewportPoint(worldPos)
+
+            if onScreen then
+                local distPixels = (Vector2.new(screenPos.X, screenPos.Y) - mousePos).Magnitude
+                local fovRadius = (Camera.ViewportSize.Y / 2) * math.tan(math.rad(SETTINGS.FOV / 2))
+                
+                if distPixels <= fovRadius then
+                    local angle = distPixels / fovRadius * (SETTINGS.FOV / 2)
+                    if angle < bestAngle then
+                        bestAngle = angle
+                        bestTarget = obj
+                    end
+                end
             end
         end
     end
 
-    -- เมนู
-    if menuOpen then
-        love.graphics.setColor(0, 0, 0, 0.7)
-        love.graphics.rectangle("fill", 50, 50, 300, 200)
-        love.graphics.setColor(1, 1, 1)
-        love.graphics.print("เมนูตั้งค่า", 60, 60)
-        love.graphics.print("FOV: " .. fov, 60, 90)
-        love.graphics.print("↑↓ เพื่อปรับ FOV", 60, 110)
-        love.graphics.print("R: ทีมแดง | G: ทีมเขียว", 60, 130)
+    -- วาด ESP (ใช้ BillboardGui หรือ ScreenGui)
+    -- ในที่นี้เราใช้วิธีง่าย: สร้างกรอบรอบเป้าหมาย (Roblox ต้องใช้ BillboardGui)
+    -- แต่เพื่อความเรียบง่าย เราจะ print ชั่วคราว
+    if bestTarget then
+        local team = bestTarget:FindFirstChild("Team") and bestTarget.Team.Value or "green"
+        if (team == "red" and SETTINGS.ShowEnemies) or (team == "green" and SETTINGS.ShowTeammates) then
+            -- ในเกมจริง: สร้าง ESP Frame ด้วย BillboardGui ที่นี่
+            -- ตัวอย่างการสร้าง ESP: https://create.roblox.com/docs/reference/engine/classes/BillboardGui
+        end
     end
-end
+end)
 
-function love.keypressed(key)
-    if menuOpen then
-        if key == "up" then fov = math.min(120, fov + 5) end
-        if key == "down" then fov = math.max(10, fov - 5) end
-        if key == "r" then showRedTeam = not showRedTeam end
-        if key == "g" then showGreenTeam = not showGreenTeam end
+-- ระบบเปิด/ปิดด้วยท่าทาง (มือถือ)
+UserInputService.TouchEnabled:Connect(function()
+    if UserInputService.TouchEnabled then
+        -- บนมือถือ: ใช้ปุ่ม UI แทนการกดคีย์บอร์ด
+        -- ระบบเราออกแบบมาให้ใช้ UI แล้ว ไม่ต้องทำอะไรเพิ่ม!
     end
-end
+end)
