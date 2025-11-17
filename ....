@@ -1,133 +1,61 @@
--- VARIABLES
 local Players = game:GetService("Players")
-local LocalPlayer = Players.LocalPlayer
-local Mouse = LocalPlayer:GetMouse()
-local RunService = game:GetService("RunService")
+local player = Players.LocalPlayer
+local ToggleESPEvent = game.ReplicatedStorage:WaitForChild("ToggleESPEvent")
 
--- SETTINGS
-local settings = {
-    urlEnabled = false,
-    fovEnabled = false,
-    espEnabled = false
-}
+local espEnabled = false
+local espObjects = {} -- เก็บ ESP ที่ถูกสร้าง
 
--- GUI SETUP
-local ScreenGui = Instance.new("ScreenGui")
-ScreenGui.Parent = LocalPlayer:WaitForChild("PlayerGui")
-
--- MENU FRAME
-local Menu = Instance.new("Frame")
-Menu.Size = UDim2.new(0, 250, 0, 200)
-Menu.Position = UDim2.new(0, 10, 0, 50)
-Menu.BackgroundColor3 = Color3.fromRGB(50,50,50)
-Menu.Visible = true
-Menu.Parent = ScreenGui
-
--- BUTTON CREATOR FUNCTION
-local function createButton(name, posY, toggleVar)
-    local btn = Instance.new("TextButton")
-    btn.Size = UDim2.new(0, 200, 0, 40)
-    btn.Position = UDim2.new(0, 20, 0, posY)
-    btn.Text = name .. ": OFF"
-    btn.Parent = Menu
-    btn.BackgroundColor3 = Color3.fromRGB(100,100,100)
-
-    btn.MouseButton1Click:Connect(function()
-        settings[toggleVar] = not settings[toggleVar]
-        btn.Text = name .. ": " .. (settings[toggleVar] and "ON" or "OFF")
-    end)
-
-    return btn
+-- ฟังก์ชันสร้าง ESP ให้ผู้เล่นอื่น
+local function createESP(target)
+    if target.Character and target.Character:FindFirstChild("Head") then
+        
+        local billboard = Instance.new("BillboardGui")
+        billboard.Name = "ESP_Tag"
+        billboard.Adornee = target.Character.Head
+        billboard.Size = UDim2.new(0, 200, 0, 50)
+        billboard.AlwaysOnTop = true
+        
+        local label = Instance.new("TextLabel", billboard)
+        label.Size = UDim2.new(1, 0, 1, 0)
+        label.BackgroundTransparency = 1
+        label.Text = target.Name
+        label.TextColor3 = Color3.fromRGB(255, 50, 50)
+        label.TextScaled = true
+        
+        billboard.Parent = target.Character
+        
+        espObjects[target] = billboard
+    end
 end
 
--- CREATE BUTTONS
-local urlButton = createButton("URL", 20, "urlEnabled")
-local fovButton = createButton("FOV Homing", 70, "fovEnabled")
-local espButton = createButton("ESP", 120, "espEnabled")
+-- ลบ ESP
+local function removeESP(target)
+    if espObjects[target] then
+        espObjects[target]:Destroy()
+        espObjects[target] = nil
+    end
+end
 
--- FUNCTION: ESP
-local function updateESP()
-    for _, plr in ipairs(Players:GetPlayers()) do
-        if plr ~= LocalPlayer then
-            local char = plr.Character
-            if char and char:FindFirstChild("HumanoidRootPart") then
-                if settings.espEnabled then
-                    local billboard = char:FindFirstChild("ESP")
-                    if not billboard then
-                        billboard = Instance.new("BillboardGui")
-                        billboard.Name = "ESP"
-                        billboard.Size = UDim2.new(0, 100, 0, 50)
-                        billboard.AlwaysOnTop = true
-                        billboard.Adornee = char.HumanoidRootPart
-                        billboard.Parent = char
+-- เปิด/ปิด ESP
+ToggleESPEvent.OnClientEvent:Connect(function(state)
+    espEnabled = state
 
-                        local label = Instance.new("TextLabel")
-                        label.Size = UDim2.new(1,0,1,0)
-                        label.BackgroundTransparency = 1
-                        label.Text = plr.Name
-                        label.TextColor3 = plr.TeamColor.Color -- แดงหรือเขียว
-                        label.TextScaled = true
-                        label.Parent = billboard
-                    else
-                        billboard.Enabled = true
-                    end
-                else
-                    local billboard = char:FindFirstChild("ESP")
-                    if billboard then
-                        billboard.Enabled = false
-                    end
-                end
+    for _, p in pairs(Players:GetPlayers()) do
+        if p ~= player then
+            if espEnabled then
+                createESP(p)
+            else
+                removeESP(p)
             end
         end
     end
-end
-
--- FUNCTION: FOV Homing Bullet
-local function fireHomingBullet()
-    if not settings.fovEnabled then return end
-    local closest = nil
-    local minDist = math.huge
-
-    for _, plr in ipairs(Players:GetPlayers()) do
-        if plr ~= LocalPlayer and plr.Team ~= LocalPlayer.Team then
-            local char = plr.Character
-            if char and char:FindFirstChild("HumanoidRootPart") then
-                local dist = (char.HumanoidRootPart.Position - LocalPlayer.Character.HumanoidRootPart.Position).Magnitude
-                if dist < minDist then
-                    minDist = dist
-                    closest = char.HumanoidRootPart
-                end
-            end
-        end
-    end
-
-    if closest then
-        -- สร้าง projectile (ตัวอย่าง sphere)
-        local bullet = Instance.new("Part")
-        bullet.Shape = Enum.PartType.Ball
-        bullet.Material = Enum.Material.Neon
-        bullet.Color = Color3.fromRGB(255, 0, 0)
-        bullet.Size = Vector3.new(1,1,1)
-        bullet.CFrame = LocalPlayer.Character.HumanoidRootPart.CFrame
-        bullet.Anchored = false
-        bullet.CanCollide = false
-        bullet.Parent = workspace
-
-        local bodyVelocity = Instance.new("BodyVelocity")
-        bodyVelocity.MaxForce = Vector3.new(1e5,1e5,1e5)
-        bodyVelocity.Velocity = (closest.Position - bullet.Position).Unit * 100
-        bodyVelocity.Parent = bullet
-
-        -- ลบ bullet หลัง 3 วินาที
-        game.Debris:AddItem(bullet, 3)
-    end
-end
-
--- CONNECTIONS
-RunService.RenderStepped:Connect(function()
-    updateESP()
 end)
 
-Mouse.Button1Down:Connect(function()
-    fireHomingBullet()
+-- ถ้ามีผู้เล่นเข้ามาใหม่ขณะเปิด ESP
+Players.PlayerAdded:Connect(function(p)
+    if espEnabled then
+        p.CharacterAdded:Connect(function()
+            createESP(p)
+        end)
+    end
 end)
