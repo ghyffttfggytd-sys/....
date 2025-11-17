@@ -1,174 +1,133 @@
--- =====================================
---  SETTINGS
--- =====================================
-local menu = {
-    open = false,
-    url = false,
-    fovSystem = false,
-    espSystem = false
+-- VARIABLES
+local Players = game:GetService("Players")
+local LocalPlayer = Players.LocalPlayer
+local Mouse = LocalPlayer:GetMouse()
+local RunService = game:GetService("RunService")
+
+-- SETTINGS
+local settings = {
+    urlEnabled = false,
+    fovEnabled = false,
+    espEnabled = false
 }
 
-player = { x = 300, y = 500, fov = 60, range = 500 }
-players = {
-    {x=200, y=150, team="enemy", name="Enemy 1", alive=true},
-    {x=400, y=250, team="enemy", name="Enemy 2", alive=true},
-    {x=350, y=320, team="ally",  name="Ally 1",  alive=true}
-}
-bullets = {}
+-- GUI SETUP
+local ScreenGui = Instance.new("ScreenGui")
+ScreenGui.Parent = LocalPlayer:WaitForChild("PlayerGui")
 
--- ปุ่มมือถือ
-buttons = {
-    menu = {x=20, y=20, w=120, h=50, text="MENU"},
-    url  = {x=20, y=90, w=200, h=50, text="URL"},
-    fov  = {x=20, y=160, w=200, h=50, text="FOV System"},
-    esp  = {x=20, y=230, w=200, h=50, text="ESP"},
-}
+-- MENU FRAME
+local Menu = Instance.new("Frame")
+Menu.Size = UDim2.new(0, 250, 0, 200)
+Menu.Position = UDim2.new(0, 10, 0, 50)
+Menu.BackgroundColor3 = Color3.fromRGB(50,50,50)
+Menu.Visible = true
+Menu.Parent = ScreenGui
 
--- =====================================
---  SHOOT
--- =====================================
-function shoot(tx, ty)
-    if not menu.fovSystem then return end
+-- BUTTON CREATOR FUNCTION
+local function createButton(name, posY, toggleVar)
+    local btn = Instance.new("TextButton")
+    btn.Size = UDim2.new(0, 200, 0, 40)
+    btn.Position = UDim2.new(0, 20, 0, posY)
+    btn.Text = name .. ": OFF"
+    btn.Parent = Menu
+    btn.BackgroundColor3 = Color3.fromRGB(100,100,100)
 
-    table.insert(bullets, {
-        x = player.x,
-        y = player.y,
-        speed = 300,
-        target = findTargetInFOV()
-    })
+    btn.MouseButton1Click:Connect(function()
+        settings[toggleVar] = not settings[toggleVar]
+        btn.Text = name .. ": " .. (settings[toggleVar] and "ON" or "OFF")
+    end)
+
+    return btn
 end
 
--- =====================================
---  FIND TARGET BY FOV
--- =====================================
-function findTargetInFOV()
-    local bestTarget = nil
-    local bestDist = math.huge
+-- CREATE BUTTONS
+local urlButton = createButton("URL", 20, "urlEnabled")
+local fovButton = createButton("FOV Homing", 70, "fovEnabled")
+local espButton = createButton("ESP", 120, "espEnabled")
 
-    for _, e in ipairs(players) do
-        if e.alive and e.team == "enemy" then
-            local dx = e.x - player.x
-            local dy = e.y - player.y
-            local dist = math.sqrt(dx*dx + dy*dy)
-            
-            if dist < bestDist then
-                bestDist = dist
-                bestTarget = e
+-- FUNCTION: ESP
+local function updateESP()
+    for _, plr in ipairs(Players:GetPlayers()) do
+        if plr ~= LocalPlayer then
+            local char = plr.Character
+            if char and char:FindFirstChild("HumanoidRootPart") then
+                if settings.espEnabled then
+                    local billboard = char:FindFirstChild("ESP")
+                    if not billboard then
+                        billboard = Instance.new("BillboardGui")
+                        billboard.Name = "ESP"
+                        billboard.Size = UDim2.new(0, 100, 0, 50)
+                        billboard.AlwaysOnTop = true
+                        billboard.Adornee = char.HumanoidRootPart
+                        billboard.Parent = char
+
+                        local label = Instance.new("TextLabel")
+                        label.Size = UDim2.new(1,0,1,0)
+                        label.BackgroundTransparency = 1
+                        label.Text = plr.Name
+                        label.TextColor3 = plr.TeamColor.Color -- แดงหรือเขียว
+                        label.TextScaled = true
+                        label.Parent = billboard
+                    else
+                        billboard.Enabled = true
+                    end
+                else
+                    local billboard = char:FindFirstChild("ESP")
+                    if billboard then
+                        billboard.Enabled = false
+                    end
+                end
+            end
+        end
+    end
+end
+
+-- FUNCTION: FOV Homing Bullet
+local function fireHomingBullet()
+    if not settings.fovEnabled then return end
+    local closest = nil
+    local minDist = math.huge
+
+    for _, plr in ipairs(Players:GetPlayers()) do
+        if plr ~= LocalPlayer and plr.Team ~= LocalPlayer.Team then
+            local char = plr.Character
+            if char and char:FindFirstChild("HumanoidRootPart") then
+                local dist = (char.HumanoidRootPart.Position - LocalPlayer.Character.HumanoidRootPart.Position).Magnitude
+                if dist < minDist then
+                    minDist = dist
+                    closest = char.HumanoidRootPart
+                end
             end
         end
     end
 
-    return bestTarget
-end
+    if closest then
+        -- สร้าง projectile (ตัวอย่าง sphere)
+        local bullet = Instance.new("Part")
+        bullet.Shape = Enum.PartType.Ball
+        bullet.Material = Enum.Material.Neon
+        bullet.Color = Color3.fromRGB(255, 0, 0)
+        bullet.Size = Vector3.new(1,1,1)
+        bullet.CFrame = LocalPlayer.Character.HumanoidRootPart.CFrame
+        bullet.Anchored = false
+        bullet.CanCollide = false
+        bullet.Parent = workspace
 
--- =====================================
---  UPDATE BULLETS
--- =====================================
-function updateBullets(dt)
-    for i, b in ipairs(bullets) do
-        if b.target and b.target.alive then
-            local dx = b.target.x - b.x
-            local dy = b.target.y - b.y
-            local dist = math.sqrt(dx*dx + dy*dy)
+        local bodyVelocity = Instance.new("BodyVelocity")
+        bodyVelocity.MaxForce = Vector3.new(1e5,1e5,1e5)
+        bodyVelocity.Velocity = (closest.Position - bullet.Position).Unit * 100
+        bodyVelocity.Parent = bullet
 
-            if dist < 10 then
-                b.target.alive = false
-                bullets[i] = nil
-            else
-                b.x = b.x + (dx/dist) * b.speed * dt
-                b.y = b.y + (dy/dist) * b.speed * dt
-            end
-        end
+        -- ลบ bullet หลัง 3 วินาที
+        game.Debris:AddItem(bullet, 3)
     end
 end
 
--- =====================================
---  DRAW ESP
--- =====================================
-function drawESP()
-    if not menu.espSystem then return end
+-- CONNECTIONS
+RunService.RenderStepped:Connect(function()
+    updateESP()
+end)
 
-    for _, p in ipairs(players) do
-        if p.alive then
-            if p.team == "enemy" then
-                love.graphics.setColor(1,0,0)
-            else
-                love.graphics.setColor(0,1,0)
-            end
-
-            love.graphics.rectangle("line", p.x-15, p.y-30, 30, 60)
-            love.graphics.print(p.name, p.x-20, p.y-50)
-            love.graphics.line(player.x, player.y, p.x, p.y)
-        end
-    end
-
-    love.graphics.setColor(1,1,1)
-end
-
--- =====================================
---  DRAW BUTTON
--- =====================================
-function drawButton(btn, active)
-    if active then
-        love.graphics.setColor(0,1,0,0.8)
-    else
-        love.graphics.setColor(0.2,0.2,0.2,0.7)
-    end
-    love.graphics.rectangle("fill", btn.x, btn.y, btn.w, btn.h, 8)
-    
-    love.graphics.setColor(1,1,1)
-    love.graphics.print(btn.text, btn.x+10, btn.y+15)
-end
-
--- =====================================
---  TOUCH INPUT
--- =====================================
-function love.touchpressed(id, x, y, dx, dy, pressure)
-    -- เช็กปุ่มเมนู
-    if inside(buttons.menu, x, y) then
-        menu.open = not menu.open
-        return
-    end
-
-    if menu.open then
-        if inside(buttons.url, x, y) then
-            menu.url = not menu.url
-        elseif inside(buttons.fov, x, y) then
-            menu.fovSystem = not menu.fovSystem
-        elseif inside(buttons.esp, x, y) then
-            menu.espSystem = not menu.espSystem
-        end
-    else
-        -- ยิงถ้าคลิกข้างนอกเมนู
-        shoot(x, y)
-    end
-end
-
-function inside(btn, x, y)
-    return (x >= btn.x and x <= btn.x+btn.w and y >= btn.y and y <= btn.y+btn.h)
-end
-
--- =====================================
---  LOVE2D MAIN DRAW LOOP
--- =====================================
-function love.update(dt)
-    updateBullets(dt)
-end
-
-function love.draw()
-    -- player
-    love.graphics.setColor(0,0,1)
-    love.graphics.circle("fill", player.x, player.y, 12)
-
-    -- ESP
-    drawESP()
-
-    -- ปุ่มเมนู
-    drawButton(buttons.menu, menu.open)
-
-    if menu.open then
-        drawButton(buttons.url, menu.url)
-        drawButton(buttons.fov, menu.fovSystem)
-        drawButton(buttons.esp, menu.espSystem)
-    end
-end
+Mouse.Button1Down:Connect(function()
+    fireHomingBullet()
+end)
