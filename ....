@@ -1,61 +1,77 @@
-local Players = game:GetService("Players")
-local player = Players.LocalPlayer
-local ToggleESPEvent = game.ReplicatedStorage:WaitForChild("ToggleESPEvent")
+-- main.lua (ใช้ได้กับ Love2D: https://love2d.org/)
+local targets = {}
+local menuOpen = false
+local fov = 60 -- องศา
+local showRedTeam = true
+local showGreenTeam = true
 
-local espEnabled = false
-local espObjects = {} -- เก็บ ESP ที่ถูกสร้าง
-
--- ฟังก์ชันสร้าง ESP ให้ผู้เล่นอื่น
-local function createESP(target)
-    if target.Character and target.Character:FindFirstChild("Head") then
-        
-        local billboard = Instance.new("BillboardGui")
-        billboard.Name = "ESP_Tag"
-        billboard.Adornee = target.Character.Head
-        billboard.Size = UDim2.new(0, 200, 0, 50)
-        billboard.AlwaysOnTop = true
-        
-        local label = Instance.new("TextLabel", billboard)
-        label.Size = UDim2.new(1, 0, 1, 0)
-        label.BackgroundTransparency = 1
-        label.Text = target.Name
-        label.TextColor3 = Color3.fromRGB(255, 50, 50)
-        label.TextScaled = true
-        
-        billboard.Parent = target.Character
-        
-        espObjects[target] = billboard
+function love.load()
+    love.window.setTitle("Aim Trainer - ฝึกทักษะอย่างถูกต้อง!")
+    for i = 1, 10 do
+        table.insert(targets, {
+            x = math.random(50, love.graphics.getWidth() - 50),
+            y = math.random(50, love.graphics.getHeight() - 50),
+            isDoor = math.random() > 0.5,
+            team = math.random() > 0.5 and "red" or "green"
+        })
     end
 end
 
--- ลบ ESP
-local function removeESP(target)
-    if espObjects[target] then
-        espObjects[target]:Destroy()
-        espObjects[target] = nil
+function love.update(dt)
+    if love.keyboard.isDown("m") then
+        menuOpen = not menuOpen
+        love.timer.sleep(0.2) -- ป้องกัน toggle เร็วเกิน
     end
 end
 
--- เปิด/ปิด ESP
-ToggleESPEvent.OnClientEvent:Connect(function(state)
-    espEnabled = state
+function love.draw()
+    love.graphics.setColor(1, 1, 1)
+    love.graphics.print("กด M เพื่อเปิดเมนู", 10, 10)
 
-    for _, p in pairs(Players:GetPlayers()) do
-        if p ~= player then
-            if espEnabled then
-                createESP(p)
+    -- วาดเป้าหมาย
+    for _, t in ipairs(targets) do
+        if t.isDoor then
+            if t.team == "red" and showRedTeam then
+                love.graphics.setColor(1, 0, 0)
+            elseif t.team == "green" and showGreenTeam then
+                love.graphics.setColor(0, 1, 0)
             else
-                removeESP(p)
+                love.graphics.setColor(0.5, 0.5, 0.5)
+            end
+            love.graphics.circle("fill", t.x, t.y, 20)
+            
+            -- คำนวณระยะห่างจากเมาส์
+            local mx, my = love.mouse.getPosition()
+            local dx, dy = mx - t.x, my - t.y
+            local dist = math.sqrt(dx*dx + dy*dy)
+            local angle = math.deg(math.atan2(dy, dx))
+            
+            -- วาด FOV indicator (ถ้าอยู่ในระยะ)
+            if dist < 200 then
+                love.graphics.setColor(1, 1, 0, 0.5)
+                love.graphics.arc("line", "open", t.x, t.y, 180, 
+                    math.rad(angle - fov/2), math.rad(angle + fov/2))
             end
         end
     end
-end)
 
--- ถ้ามีผู้เล่นเข้ามาใหม่ขณะเปิด ESP
-Players.PlayerAdded:Connect(function(p)
-    if espEnabled then
-        p.CharacterAdded:Connect(function()
-            createESP(p)
-        end)
+    -- เมนู
+    if menuOpen then
+        love.graphics.setColor(0, 0, 0, 0.7)
+        love.graphics.rectangle("fill", 50, 50, 300, 200)
+        love.graphics.setColor(1, 1, 1)
+        love.graphics.print("เมนูตั้งค่า", 60, 60)
+        love.graphics.print("FOV: " .. fov, 60, 90)
+        love.graphics.print("↑↓ เพื่อปรับ FOV", 60, 110)
+        love.graphics.print("R: ทีมแดง | G: ทีมเขียว", 60, 130)
     end
-end)
+end
+
+function love.keypressed(key)
+    if menuOpen then
+        if key == "up" then fov = math.min(120, fov + 5) end
+        if key == "down" then fov = math.max(10, fov - 5) end
+        if key == "r" then showRedTeam = not showRedTeam end
+        if key == "g" then showGreenTeam = not showGreenTeam end
+    end
+end
